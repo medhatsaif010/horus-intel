@@ -9,6 +9,8 @@
 | endoflife.date | البرامج وإصدارات Windows اللي دعمها انتهى |
 | Microsoft Windows release health | مستوى تحديث Windows (ناقصه تحديثات بقاله قد إيه) |
 | LOLDrivers | الدرايفرات الضعيفة أو الضارة المعروفة (BYOVD) |
+| Echap stalkerware-indicators | برامج التجسس على الموبايل (أسماء الحزم والشهادات) |
+| CISA KEV (Android, Qualcomm, Mali, Samsung) | ثغرات الموبايل المستغلة |
 
 ## المفتاح
 - `keys/horus-intel-private.pem` هو **المفتاح السري**. أي حد معاه يقدر يعمل قاعدة مزيفة وحورس هيصدّقها، فـ**متشاركهوش ومترفعهوش على GitHub**. خد منه نسخة احتياطية في مكان آمن.
@@ -35,4 +37,5 @@ python build_intel.py --out out
 - CISA KEV وNVD: بيانات حكومية أمريكية عامة. NVD بيطلب الجملة دي: "This product uses data from the NVD API but is not endorsed or certified by the NVD."
 - EPSS: مجاني بشرط ذكر FIRST كمصدر.
 - endoflife.date: رخصة MIT.
+- Echap stalkerware-indicators: رخصة CC-BY 4.0، فلازم تذكرهم كمصدر.
 - LOLDrivers: راجع رخصة الـ repo بتاعهم قبل البيع التجاري، واذكرهم كمصدر.

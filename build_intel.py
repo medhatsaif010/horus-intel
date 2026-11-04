@@ -137,7 +137,15 @@ def build_kev(epss_on=True):
     for a in apps:
         for r in a["ranges"]:
             r["epss"] = epss.get(r["cve"])
-    return {"catalogVersion": kev.get("catalogVersion"), "count": kev.get("count"), "apps": apps}
+    android = []
+    for v in vulns:
+        vp, pr = v["vendorProject"].lower(), v["product"].lower()
+        if vp == "android" or (vp == "google" and re.search(r"android|pixel", pr)) or vp == "qualcomm" \
+                or (vp == "arm" and "mali" in pr) or (vp == "samsung" and "mobile" in pr):
+            android.append({"cve": v["cveID"], "dateAdded": v["dateAdded"], "vendor": v["vendorProject"], "product": v["product"],
+                            "desc": v.get("vulnerabilityName", "")[:140], "ransomware": v.get("knownRansomwareCampaignUse") == "Known"})
+    android.sort(key=lambda x: x["dateAdded"], reverse=True)
+    return {"catalogVersion": kev.get("catalogVersion"), "count": kev.get("count"), "apps": apps, "android": android}
 
 
 # --------------------------------------------------------------------- EOL
@@ -238,6 +246,18 @@ def build_drivers():
     return out
 
 
+# --------------------------------------------------------------------- stalkerware
+def build_stalkerware():
+    d = yaml.safe_load(get(f"{GH}/AssoEchap/stalkerware-indicators/master/ioc.yaml").decode("utf-8"))
+    out = []
+    for e in d:
+        pk = [x for x in (e.get("packages") or []) if isinstance(x, str)]
+        if pk:
+            out.append({"name": e.get("name", ""), "type": e.get("type", "stalkerware"), "packages": pk,
+                        "certificates": [c.upper() for c in (e.get("certificates") or []) if isinstance(c, str)]})
+    return out
+
+
 # --------------------------------------------------------------------- sign
 def sign(data: bytes, pem: bytes) -> str:
     from cryptography.hazmat.primitives import hashes, serialization
@@ -261,6 +281,8 @@ def main():
     win = {"cycles": build_windows_cycles(), "builds": build_windows_builds()}
     print("LOLDrivers...", file=sys.stderr)
     drv = build_drivers()
+    print("Stalkerware...", file=sys.stderr)
+    stalk = build_stalkerware()
     pack = {
         "schema": 1,
         "generatedAt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -271,15 +293,16 @@ def main():
             "eol": "endoflife.date",
             "windows": "Microsoft Windows release health",
             "drivers": "LOLDrivers (magicsword-io/LOLDrivers)",
+            "stalkerware": "Echap stalkerware-indicators (CC-BY 4.0)",
         },
-        "kev": kev, "eol": eol, "windows": win, "drivers": drv,
+        "kev": kev, "eol": eol, "windows": win, "drivers": drv, "stalkerware": stalk,
     }
     data = json.dumps(pack, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     open(os.path.join(a.out, "horus-intel.json"), "wb").write(data)
     pem = os.environ.get("HORUS_INTEL_KEY", "").encode() or open(a.key, "rb").read()
     open(os.path.join(a.out, "horus-intel.sig"), "w").write(sign(data, pem))
     print(f"OK: {len(data)//1024} KB, KEV apps {len(kev['apps'])}, EOL {len(eol['products'])}, "
-          f"builds {sum(len(v) for v in win['builds'].values())}, drivers {len(drv)}", file=sys.stderr)
+          f"builds {sum(len(v) for v in win['builds'].values())}, drivers {len(drv)}, android KEV {len(kev['android'])}, stalkerware {len(stalk)}", file=sys.stderr)
 
 
 if __name__ == "__main__":
