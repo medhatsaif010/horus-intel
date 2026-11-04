@@ -1,0 +1,30 @@
+name: Horus threat-intel pack
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # every day 03:17 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml cryptography
+      - name: Build and sign the pack
+        env:
+          HORUS_INTEL_KEY: ${{ secrets.HORUS_INTEL_KEY }}
+          HORUS_USE_CISA: "1"
+        run: python build_intel.py --out out
+      - name: Publish to the "intel" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view intel >/dev/null 2>&1 || gh release create intel --title "Horus threat intel" --notes "Signed pack, rebuilt daily."
+          gh release upload intel out/horus-intel.json out/horus-intel.sig --clobber
