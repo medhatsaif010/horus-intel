@@ -21,6 +21,7 @@ jobs:
         env:
           HORUS_INTEL_KEY: ${{ secrets.HORUS_INTEL_KEY }}
           HORUS_USE_CISA: "1"
+          ABUSECH_AUTH_KEY: ${{ secrets.ABUSECH_AUTH_KEY }}
         run: python build_intel.py --out out
       - name: Publish to the "intel" release
         env:

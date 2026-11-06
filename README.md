@@ -36,6 +36,9 @@ python build_intel.py --out out
    ```
    لو الـ repo Private، الـ release مش هيتنزّل من غير تسجيل دخول. في الحالة دي إمّا تخلّي repo تاني Public للـ releases بس، أو ترفع الملفين على أي استضافة عامة.
 
+## مفتاح abuse.ch (اختياري)
+بيانات ThreatFox محتاجة مفتاح مجاني. اعمل حساب على https://auth.abuse.ch، وخد الـ Auth-Key، وضيفه في الـ repo كـ Secret اسمه `ABUSECH_AUTH_KEY`. من غيره، القاعدة بتستخدم مؤشرات Echap بس.
+
 ## التراخيص
 - CISA KEV وNVD: بيانات حكومية أمريكية عامة. NVD بيطلب الجملة دي: "This product uses data from the NVD API but is not endorsed or certified by the NVD."
 - EPSS: مجاني بشرط ذكر FIRST كمصدر.

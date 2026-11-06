@@ -274,10 +274,20 @@ def build_c2(stalk_yaml):
             if isinstance(ip, str):
                 ips[ip] = {"src": "Echap", "tag": e.get("name", "stalkerware")}
     try:
-        tf = get_json("https://threatfox.abuse.ch/export/json/recent/", timeout=60) or {}
+        key = os.environ.get("ABUSECH_AUTH_KEY", "").strip()
+        rows_all = []
+        if key:
+            req = urllib.request.Request("https://threatfox-api.abuse.ch/api/v1/", data=json.dumps({"query": "get_iocs", "days": 7}).encode(),
+                                         headers={**UA, "Auth-Key": key, "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=90) as r:
+                rows_all = json.loads(r.read().decode()).get("data") or []
+        else:
+            tf = get_json("https://threatfox.abuse.ch/export/json/recent/", timeout=60) or {}
+            for _, rows in tf.items():
+                rows_all += rows if isinstance(rows, list) else []
         n = 0
-        for _, rows in tf.items():
-            for r in rows if isinstance(rows, list) else []:
+        for rows in [rows_all]:
+            for r in rows:
                 v, t = str(r.get("ioc_value", "")), r.get("ioc_type", "")
                 tag = (r.get("malware_printable") or r.get("threat_type") or "malware")[:40]
                 if t == "domain":
