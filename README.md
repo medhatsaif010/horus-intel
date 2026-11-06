@@ -11,6 +11,9 @@
 | LOLDrivers | الدرايفرات الضعيفة أو الضارة المعروفة (BYOVD) |
 | Echap stalkerware-indicators | برامج التجسس على الموبايل (أسماء الحزم والشهادات) |
 | CISA KEV (Android, Qualcomm, Mali, Samsung) | ثغرات الموبايل المستغلة |
+| ThreatFox + Echap C2 | دومينات وعناوين سيرفرات التحكم، بتتقارن بالـ DNS cache والاتصالات |
+| IEEE OUI (silverwind/oui-data) | اسم الشركة المصنّعة لأجهزة شبكة البيت |
+| قايمة البنوك والمحافظ المصرية | كشف تطبيقات البنوك المزيفة اللي اتسطبت من برّه المتجر |
 
 ## المفتاح
 - `keys/horus-intel-private.pem` هو **المفتاح السري**. أي حد معاه يقدر يعمل قاعدة مزيفة وحورس هيصدّقها، فـ**متشاركهوش ومترفعهوش على GitHub**. خد منه نسخة احتياطية في مكان آمن.
@@ -37,5 +40,6 @@ python build_intel.py --out out
 - CISA KEV وNVD: بيانات حكومية أمريكية عامة. NVD بيطلب الجملة دي: "This product uses data from the NVD API but is not endorsed or certified by the NVD."
 - EPSS: مجاني بشرط ذكر FIRST كمصدر.
 - endoflife.date: رخصة MIT.
+- ThreatFox: CC0.
 - Echap stalkerware-indicators: رخصة CC-BY 4.0، فلازم تذكرهم كمصدر.
 - LOLDrivers: راجع رخصة الـ repo بتاعهم قبل البيع التجاري، واذكرهم كمصدر.

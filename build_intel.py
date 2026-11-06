@@ -247,8 +247,12 @@ def build_drivers():
 
 
 # --------------------------------------------------------------------- stalkerware
+STALK_YAML = []
+
+
 def build_stalkerware():
     d = yaml.safe_load(get(f"{GH}/AssoEchap/stalkerware-indicators/master/ioc.yaml").decode("utf-8"))
+    STALK_YAML.extend(d)
     out = []
     for e in d:
         pk = [x for x in (e.get("packages") or []) if isinstance(x, str)]
@@ -256,6 +260,53 @@ def build_stalkerware():
             out.append({"name": e.get("name", ""), "type": e.get("type", "stalkerware"), "packages": pk,
                         "certificates": [c.upper() for c in (e.get("certificates") or []) if isinstance(c, str)]})
     return out
+
+
+# --------------------------------------------------------------------- C2 / IOCs
+def build_c2(stalk_yaml):
+    domains, ips = {}, {}
+    for e in stalk_yaml:
+        c2 = e.get("c2") or {}
+        for d in c2.get("domains") or []:
+            if isinstance(d, str):
+                domains[d.lower()] = {"src": "Echap", "tag": e.get("name", "stalkerware")}
+        for ip in c2.get("ips") or []:
+            if isinstance(ip, str):
+                ips[ip] = {"src": "Echap", "tag": e.get("name", "stalkerware")}
+    try:
+        tf = get_json("https://threatfox.abuse.ch/export/json/recent/", timeout=60) or {}
+        n = 0
+        for _, rows in tf.items():
+            for r in rows if isinstance(rows, list) else []:
+                v, t = str(r.get("ioc_value", "")), r.get("ioc_type", "")
+                tag = (r.get("malware_printable") or r.get("threat_type") or "malware")[:40]
+                if t == "domain":
+                    domains[v.lower()] = {"src": "ThreatFox", "tag": tag}; n += 1
+                elif t == "ip:port":
+                    ips[v.split(":")[0]] = {"src": "ThreatFox", "tag": tag}; n += 1
+        print(f"  ThreatFox: {n} IOCs", file=sys.stderr)
+    except Exception as e:
+        print(f"  ThreatFox skipped: {e}", file=sys.stderr)
+    return {"domains": [{"d": k, **v} for k, v in domains.items()], "ips": [{"ip": k, **v} for k, v in ips.items()]}
+
+
+def build_oui():
+    d = get_json(f"{GH}/silverwind/oui-data/master/index.json", timeout=120)
+    out = {}
+    for k, v in d.items():
+        if len(k) == 6:
+            out[k.upper()] = str(v).split("\n")[0].strip()[:28]
+    return out
+
+
+# Egyptian banks and wallets: a sideloaded app whose package name carries one of these
+# brands is almost always a fake (official apps come from an app store).
+FINANCE_EG = [
+    ("InstaPay", r"instapay|\bipn\b"), ("Vodafone Cash", r"vodafone.?cash|vfcash|vf\.?cash"), ("Orange Cash", r"orange.?(cash|money)"),
+    ("Etisalat / e& Cash", r"etisalat.?cash|\becash\b|eand.?money"), ("WE Pay", r"\bwe.?pay\b"), ("Fawry", r"fawry"), ("valU", r"\bvalu\b"),
+    ("Meeza", r"meeza"), ("CIB", r"\bcib\b|cibeg"), ("Banque Misr", r"banque.?misr|banquemisr|\bbm\.?online"), ("National Bank of Egypt", r"\bnbe\b|alahly|ahly.?bank"),
+    ("QNB", r"\bqnb\b"), ("AAIB", r"\baaib\b"), ("Telda", r"telda"), ("Khazna", r"khazna"), ("Paymob", r"paymob"), ("Banque du Caire", r"banque.?du.?caire|bdc.?mobile"),
+]
 
 
 # --------------------------------------------------------------------- sign
@@ -283,6 +334,9 @@ def main():
     drv = build_drivers()
     print("Stalkerware...", file=sys.stderr)
     stalk = build_stalkerware()
+    print("C2 / OUI...", file=sys.stderr)
+    c2 = build_c2(STALK_YAML)
+    oui = build_oui()
     pack = {
         "schema": 1,
         "generatedAt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -294,15 +348,18 @@ def main():
             "windows": "Microsoft Windows release health",
             "drivers": "LOLDrivers (magicsword-io/LOLDrivers)",
             "stalkerware": "Echap stalkerware-indicators (CC-BY 4.0)",
+            "c2": "ThreatFox (abuse.ch, CC0) + Echap C2 indicators",
+            "oui": "IEEE OUI registry via silverwind/oui-data",
         },
-        "kev": kev, "eol": eol, "windows": win, "drivers": drv, "stalkerware": stalk,
+        "kev": kev, "eol": eol, "windows": win, "drivers": drv, "stalkerware": stalk, "c2": c2, "oui": oui,
+        "finance_eg": [{"brand": b, "rx": r} for b, r in FINANCE_EG],
     }
     data = json.dumps(pack, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     open(os.path.join(a.out, "horus-intel.json"), "wb").write(data)
     pem = os.environ.get("HORUS_INTEL_KEY", "").encode() or open(a.key, "rb").read()
     open(os.path.join(a.out, "horus-intel.sig"), "w").write(sign(data, pem))
     print(f"OK: {len(data)//1024} KB, KEV apps {len(kev['apps'])}, EOL {len(eol['products'])}, "
-          f"builds {sum(len(v) for v in win['builds'].values())}, drivers {len(drv)}, android KEV {len(kev['android'])}, stalkerware {len(stalk)}", file=sys.stderr)
+          f"builds {sum(len(v) for v in win['builds'].values())}, drivers {len(drv)}, android KEV {len(kev['android'])}, stalkerware {len(stalk)}, c2 {len(c2['domains'])}d/{len(c2['ips'])}ip, oui {len(oui)}", file=sys.stderr)
 
 
 if __name__ == "__main__":
