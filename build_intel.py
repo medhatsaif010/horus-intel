@@ -300,6 +300,37 @@ def build_c2(stalk_yaml):
     return {"domains": [{"d": k, **v} for k, v in domains.items()], "ips": [{"ip": k, **v} for k, v in ips.items()]}
 
 
+def build_malware():
+    """abuse.ch URLhaus (online malware URLs) + MalwareBazaar (recent SHA-256). Both CC0."""
+    key = os.environ.get("ABUSECH_AUTH_KEY", "").strip()
+    hdr = {**UA, **({"Auth-Key": key} if key else {})}
+
+    def fetch(url):
+        with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=120) as r:
+            return r.read().decode("utf-8", "replace")
+
+    urls, hashes = [], []
+    try:
+        for line in fetch("https://urlhaus.abuse.ch/downloads/text_online/").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and line.lower().startswith("http"):
+                urls.append(re.sub(r"^https?://", "", line, flags=re.I).rstrip("/"))
+        urls = sorted(set(urls))[:15000]
+        print(f"  URLhaus: {len(urls)} URLs", file=sys.stderr)
+    except Exception as e:
+        print(f"  URLhaus skipped: {e}", file=sys.stderr)
+    try:
+        for line in fetch("https://bazaar.abuse.ch/export/txt/sha256/recent/").splitlines():
+            line = line.strip().upper()
+            if re.fullmatch(r"[0-9A-F]{64}", line):
+                hashes.append(line)
+        hashes = sorted(set(hashes))[:20000]
+        print(f"  MalwareBazaar: {len(hashes)} hashes", file=sys.stderr)
+    except Exception as e:
+        print(f"  MalwareBazaar skipped: {e}", file=sys.stderr)
+    return {"urls": urls, "sha256": hashes}
+
+
 def build_oui():
     d = get_json(f"{GH}/silverwind/oui-data/master/index.json", timeout=120)
     out = {}
@@ -347,6 +378,8 @@ def main():
     print("C2 / OUI...", file=sys.stderr)
     c2 = build_c2(STALK_YAML)
     oui = build_oui()
+    print("Malware URLs / hashes...", file=sys.stderr)
+    mal = build_malware()
     pack = {
         "schema": 1,
         "generatedAt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -360,8 +393,9 @@ def main():
             "stalkerware": "Echap stalkerware-indicators (CC-BY 4.0)",
             "c2": "ThreatFox (abuse.ch, CC0) + Echap C2 indicators",
             "oui": "IEEE OUI registry via silverwind/oui-data",
+            "malware": "URLhaus + MalwareBazaar (abuse.ch, CC0)",
         },
-        "kev": kev, "eol": eol, "windows": win, "drivers": drv, "stalkerware": stalk, "c2": c2, "oui": oui,
+        "kev": kev, "eol": eol, "windows": win, "drivers": drv, "stalkerware": stalk, "c2": c2, "oui": oui, "malware": mal,
         "finance_eg": [{"brand": b, "rx": r} for b, r in FINANCE_EG],
     }
     data = json.dumps(pack, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
