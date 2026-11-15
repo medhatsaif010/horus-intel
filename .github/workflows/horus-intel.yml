@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "17 3 * * *"   # every day 03:17 UTC
   workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths: ["build_intel.py", ".github/workflows/horus-intel.yml"]
 
 permissions:
   contents: write
@@ -22,10 +25,13 @@ jobs:
           HORUS_INTEL_KEY: ${{ secrets.HORUS_INTEL_KEY }}
           HORUS_USE_CISA: "1"
           ABUSECH_AUTH_KEY: ${{ secrets.ABUSECH_AUTH_KEY }}
-        run: python build_intel.py --out out
+        run: |
+          set -o pipefail
+          python build_intel.py --out out 2>&1 | tee out-build.log
+          cp out-build.log out/build.log
       - name: Publish to the "intel" release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view intel >/dev/null 2>&1 || gh release create intel --title "Horus threat intel" --notes "Signed pack, rebuilt daily."
-          gh release upload intel out/horus-intel.json out/horus-intel.sig --clobber
+          gh release upload intel out/horus-intel.json out/horus-intel.sig out/build.log --clobber

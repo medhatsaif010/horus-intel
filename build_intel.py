@@ -280,7 +280,9 @@ def build_c2(stalk_yaml):
             req = urllib.request.Request("https://threatfox-api.abuse.ch/api/v1/", data=json.dumps({"query": "get_iocs", "days": 7}).encode(),
                                          headers={**UA, "Auth-Key": key, "Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=90) as r:
-                rows_all = json.loads(r.read().decode()).get("data") or []
+                resp = json.loads(r.read().decode())
+            print(f"  ThreatFox API: query_status={resp.get('query_status')!r}, data type={type(resp.get('data')).__name__}", file=sys.stderr)
+            rows_all = resp.get("data") if isinstance(resp.get("data"), list) else []
         else:
             tf = get_json("https://threatfox.abuse.ch/export/json/recent/", timeout=60) or {}
             for _, rows in tf.items():
@@ -306,8 +308,19 @@ def build_malware():
     hdr = {**UA, **({"Auth-Key": key} if key else {})}
 
     def fetch(url):
-        with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=120) as r:
-            return r.read().decode("utf-8", "replace")
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=120) as r:
+                body = r.read()
+                if body[:2] == b"PK":  # zipped export
+                    import io, zipfile
+                    z = zipfile.ZipFile(io.BytesIO(body))
+                    body = z.read(z.namelist()[0])
+                text = body.decode("utf-8", "replace")
+                print(f"  GET {url} -> {r.status}, {len(text)} chars, starts: {text[:120]!r}", file=sys.stderr)
+                return text
+        except urllib.error.HTTPError as e:
+            print(f"  GET {url} -> HTTP {e.code}: {e.read()[:200]!r}", file=sys.stderr)
+            raise
 
     urls, hashes = [], []
     try:
