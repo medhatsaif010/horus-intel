@@ -263,6 +263,9 @@ def build_stalkerware():
 
 
 # --------------------------------------------------------------------- C2 / IOCs
+TF_EXTRA = {"urls": [], "sha256": []}
+
+
 def build_c2(stalk_yaml):
     domains, ips = {}, {}
     for e in stalk_yaml:
@@ -290,57 +293,88 @@ def build_c2(stalk_yaml):
         n = 0
         for rows in [rows_all]:
             for r in rows:
-                v, t = str(r.get("ioc_value", "")), r.get("ioc_type", "")
+                v, t = str(r.get("ioc_value") or r.get("ioc") or ""), r.get("ioc_type", "")
+                if not v:
+                    continue
                 tag = (r.get("malware_printable") or r.get("threat_type") or "malware")[:40]
                 if t == "domain":
                     domains[v.lower()] = {"src": "ThreatFox", "tag": tag}; n += 1
                 elif t == "ip:port":
                     ips[v.split(":")[0]] = {"src": "ThreatFox", "tag": tag}; n += 1
+                elif t == "url":
+                    TF_EXTRA["urls"].append(re.sub(r"^https?://", "", v, flags=re.I).rstrip("/").lower())
+                elif t == "sha256_hash":
+                    TF_EXTRA["sha256"].append(v.upper())
         print(f"  ThreatFox: {n} IOCs", file=sys.stderr)
     except Exception as e:
         print(f"  ThreatFox skipped: {e}", file=sys.stderr)
     return {"domains": [{"d": k, **v} for k, v in domains.items()], "ips": [{"ip": k, **v} for k, v in ips.items()]}
 
 
-def build_malware():
-    """abuse.ch URLhaus (online malware URLs) + MalwareBazaar (recent SHA-256). Both CC0."""
+def build_malware(extra_hashes=None, extra_urls=None):
+    """abuse.ch URLhaus (malware URLs) + MalwareBazaar (recent SHA-256). Both CC0, need ABUSECH_AUTH_KEY."""
     key = os.environ.get("ABUSECH_AUTH_KEY", "").strip()
     hdr = {**UA, **({"Auth-Key": key} if key else {})}
 
-    def fetch(url):
+    def safe(u):
+        return u.replace(key, "<key>") if key else u
+
+    def fetch(url, data=None):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=120) as r:
+            req = urllib.request.Request(url, headers=hdr, data=data)
+            with urllib.request.urlopen(req, timeout=120) as r:
                 body = r.read()
                 if body[:2] == b"PK":  # zipped export
                     import io, zipfile
                     z = zipfile.ZipFile(io.BytesIO(body))
                     body = z.read(z.namelist()[0])
                 text = body.decode("utf-8", "replace")
-                print(f"  GET {url} -> {r.status}, {len(text)} chars, starts: {text[:120]!r}", file=sys.stderr)
+                print(f"  GET {safe(url)} -> {r.status}, {len(text)} chars", file=sys.stderr)
                 return text
         except urllib.error.HTTPError as e:
-            print(f"  GET {url} -> HTTP {e.code}: {e.read()[:200]!r}", file=sys.stderr)
-            raise
+            print(f"  GET {safe(url)} -> HTTP {e.code}", file=sys.stderr)
+        except Exception as e:
+            print(f"  GET {safe(url)} -> {type(e).__name__}: {e}", file=sys.stderr)
+        return None
 
-    urls, hashes = [], []
-    try:
-        for line in fetch("https://urlhaus.abuse.ch/downloads/text_online/").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and line.lower().startswith("http"):
-                urls.append(re.sub(r"^https?://", "", line, flags=re.I).rstrip("/"))
-        urls = sorted(set(urls))[:15000]
-        print(f"  URLhaus: {len(urls)} URLs", file=sys.stderr)
-    except Exception as e:
-        print(f"  URLhaus skipped: {e}", file=sys.stderr)
-    try:
-        for line in fetch("https://bazaar.abuse.ch/export/txt/sha256/recent/").splitlines():
-            line = line.strip().upper()
-            if re.fullmatch(r"[0-9A-F]{64}", line):
-                hashes.append(line)
-        hashes = sorted(set(hashes))[:20000]
-        print(f"  MalwareBazaar: {len(hashes)} hashes", file=sys.stderr)
-    except Exception as e:
-        print(f"  MalwareBazaar skipped: {e}", file=sys.stderr)
+    urls, hashes = set(extra_urls or []), set(extra_hashes or [])
+    # URLhaus: API v1 recent URLs (Auth-Key header)
+    t = fetch("https://urlhaus-api.abuse.ch/v1/urls/recent/limit/1000/") if key else None
+    if t:
+        try:
+            for u in json.loads(t).get("urls") or []:
+                if u.get("url_status") != "offline" and u.get("url"):
+                    urls.add(re.sub(r"^https?://", "", u["url"], flags=re.I).rstrip("/").lower())
+        except Exception as e:
+            print(f"  URLhaus parse: {e}", file=sys.stderr)
+    # MalwareBazaar: recent SHA-256 export (key in path), then API v1 as a fallback
+    got = False
+    if key:
+        for u in (f"https://mb-api.abuse.ch/malwarebazaar/v2/files/exports/{key}/sha256_recent.txt",
+                  f"https://mb-api.abuse.ch/v2/files/exports/{key}/sha256_recent.txt",
+                  f"https://api.spamhaus.com/malwarebazaar/v2/files/exports/{key}/sha256_recent.txt",
+                  f"https://mb-api.abuse.ch/files/exports/{key}/sha256_recent.txt"):
+            t = fetch(u)
+            if t:
+                n0 = len(hashes)
+                for line in t.splitlines():
+                    line = line.strip().strip('"').upper()
+                    if re.fullmatch(r"[0-9A-F]{64}", line):
+                        hashes.add(line)
+                if len(hashes) > n0:
+                    got = True
+                    break
+        if not got:
+            t = fetch("https://mb-api.abuse.ch/api/v1/", data=b"query=get_recent&selector=time")
+            try:
+                for x in (json.loads(t).get("data") or []) if t else []:
+                    if x.get("sha256_hash"):
+                        hashes.add(x["sha256_hash"].upper())
+            except Exception as e:
+                print(f"  MalwareBazaar parse: {e}", file=sys.stderr)
+    urls = sorted(urls)[:20000]
+    hashes = sorted(hashes)[:30000]
+    print(f"  Malware URLs: {len(urls)}, SHA-256: {len(hashes)}", file=sys.stderr)
     return {"urls": urls, "sha256": hashes}
 
 
@@ -392,7 +426,7 @@ def main():
     c2 = build_c2(STALK_YAML)
     oui = build_oui()
     print("Malware URLs / hashes...", file=sys.stderr)
-    mal = build_malware()
+    mal = build_malware(TF_EXTRA["sha256"], TF_EXTRA["urls"])
     pack = {
         "schema": 1,
         "generatedAt": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
