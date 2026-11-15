@@ -372,8 +372,19 @@ def build_malware(extra_hashes=None, extra_urls=None):
                         hashes.add(x["sha256_hash"].upper())
             except Exception as e:
                 print(f"  MalwareBazaar parse: {e}", file=sys.stderr)
-    urls = sorted(urls)[:20000]
-    hashes = sorted(hashes)[:30000]
+    # keep what earlier daily packs collected, so the list grows instead of covering only 48 hours
+    prev = os.environ.get("PREV_PACK", "")
+    old_u, old_h = [], []
+    if prev and os.path.exists(prev):
+        try:
+            pm = json.load(open(prev, encoding="utf-8-sig")).get("malware") or {}
+            old_u, old_h = pm.get("urls") or [], pm.get("sha256") or []
+        except Exception as e:
+            print(f"  previous pack unreadable: {e}", file=sys.stderr)
+    new_u = sorted(urls); new_h = sorted(hashes)
+    urls = list(dict.fromkeys(new_u + [u for u in old_u if u not in urls]))[:20000]
+    hashes = list(dict.fromkeys(new_h + [h for h in old_h if h not in hashes]))[:30000]
+    print(f"  carried over from the previous pack: {len(old_u)} URLs, {len(old_h)} hashes", file=sys.stderr)
     print(f"  Malware URLs: {len(urls)}, SHA-256: {len(hashes)}", file=sys.stderr)
     return {"urls": urls, "sha256": hashes}
 

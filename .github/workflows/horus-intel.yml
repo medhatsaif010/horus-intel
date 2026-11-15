@@ -27,6 +27,8 @@ jobs:
           ABUSECH_AUTH_KEY: ${{ secrets.ABUSECH_AUTH_KEY }}
         run: |
           set -o pipefail
+          curl -sSLf -o prev-pack.json https://github.com/${{ github.repository }}/releases/download/intel/horus-intel.json || true
+          export PREV_PACK=prev-pack.json
           python build_intel.py --out out 2>&1 | tee out-build.log
           cp out-build.log out/build.log
       - name: Publish to the "intel" release
